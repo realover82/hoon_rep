@@ -14,7 +14,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import torchvision.models as tvm
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, specificity_score
+# sklearn.metrics에서 specificity_score 임포트 제거
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
@@ -346,14 +347,22 @@ if st.session_state['analysis_results']:
         tn, fp, fn, tp = 0, 0, 0, 0
         st.warning("혼동 행렬의 크기가 예상과 다릅니다. 성능 지표를 계산할 수 없습니다.")
     
+    # 혼동 행렬 텍스트 테이블
+    st.markdown("### 혼동 행렬")
+    st.markdown("| | 예측 음성 (Negative) | 예측 양성 (Positive) |")
+    st.markdown("|---|---|---|")
+    st.markdown(f"| **실제 음성 (Negative)** | {tn} (TN) | {fp} (FP) |")
+    st.markdown(f"| **실제 양성 (Positive)** | {fn} (FN) | {tp} (TP) |")
+    
     # 혼동 행렬 텍스트 설명
-    st.markdown("모델의 예측 결과와 실제 정답을 비교하여 성능을 시각화한 표입니다.")
-    st.markdown("좌측 상단에서부터 **TN (True Negative)**, **FP (False Positive)**, **FN (False Negative)**, **TP (True Positive)**를 의미합니다.")
-    st.write(f"**True Negative (TN):** {tn} - 실제 '음성'을 '음성'으로 올바르게 예측했습니다.")
-    st.write(f"**False Positive (FP):** {fp} - 실제 '음성'을 '양성'으로 잘못 예측했습니다.")
-    st.write(f"**False Negative (FN):** {fn} - 실제 '양성'을 '음성'으로 잘못 예측했습니다.")
-    st.write(f"**True Positive (TP):** {tp} - 실제 '양성'을 '양성'으로 올바르게 예측했습니다.")
+    st.markdown("""
+    - **True Negative (TN):** 실제 음성(Negative)을 음성으로 올바르게 예측한 경우.
+    - **False Positive (FP):** 실제 음성을 양성(Positive)으로 잘못 예측한 경우 (제1종 오류).
+    - **False Negative (FN):** 실제 양성을 음성으로 잘못 예측한 경우 (제2종 오류).
+    - **True Positive (TP):** 실제 양성을 양성으로 올바르게 예측한 경우.
+    """)
 
+    # 그래프는 그대로 유지 (텍스트와 함께 시각적 정보 제공)
     fig_cm, ax_cm = plt.subplots()
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax_cm)
     ax_cm.set_xlabel('Predicted')
@@ -365,7 +374,9 @@ if st.session_state['analysis_results']:
     precision = precision_score(y_true_binary, y_pred_binary, zero_division=0)
     recall = recall_score(y_true_binary, y_pred_binary, zero_division=0)
     f1 = f1_score(y_true_binary, y_pred_binary, zero_division=0)
+    # confusion_matrix를 사용해 specificity 직접 계산
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+
     st.session_state['metrics'] = {
         'accuracy': accuracy, 'precision': precision, 'recall': recall,
         'f1': f1, 'specificity': specificity
@@ -380,6 +391,13 @@ if st.session_state['analysis_results']:
     y_scores = [r['predicted_psi_rad'] / TWO_PI for r in results]
     fpr, tpr, _ = roc_curve(y_true_binary, y_scores)
     roc_auc = auc(fpr, tpr)
+    
+    # ROC AUC 텍스트 결과
+    st.markdown("### ROC AUC 커브 결과")
+    st.write(f"**AUC (Area Under the Curve):** {roc_auc:.2f}")
+    st.markdown("이 값은 ROC 곡선 아래 면적을 나타내며, **1에 가까울수록 모델의 성능이 뛰어납니다.** 0.5에 가까우면 모델이 예측을 무작위로 하고 있음을 의미합니다.")
+
+    # 그래프는 그대로 유지
     fig_roc = go.Figure()
     fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC curve (AUC = {roc_auc:.2f})'))
     fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Random Guess', line=dict(dash='dash')))
@@ -390,10 +408,6 @@ if st.session_state['analysis_results']:
         showlegend=True
     )
     st.plotly_chart(fig_roc)
-
-    # ROC AUC 텍스트 설명
-    st.markdown("모델의 **분류 성능**을 시각화하는 그래프입니다. 곡선이 왼쪽 상단에 가까울수록 성능이 우수하며, **무작위 추측(Random Guess)** 선보다 위에 위치해야 합니다.")
-    st.markdown("**AUC (Area Under the Curve)** 값은 {roc_auc:.2f}입니다. 이 값은 ROC 곡선 아래 면적을 나타내며, **1에 가까울수록 모델의 성능이 뛰어납니다.** 0.5에 가까우면 모델이 예측을 무작위로 하고 있음을 의미합니다.")
 
 if st.button("초기화"):
     for file in glob.glob(os.path.join(UPLOAD_DIR_TEST, "*")):
