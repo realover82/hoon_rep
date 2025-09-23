@@ -7,3 +7,4 @@ plotly
 openpyxl
 torch
 torchvision
+scikit-learn
