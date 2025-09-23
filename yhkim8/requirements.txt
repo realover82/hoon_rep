@@ -5,3 +5,5 @@ requests
 gdown
 plotly
 openpyxl
+torch
+torchvision
