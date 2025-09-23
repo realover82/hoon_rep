@@ -7,7 +7,7 @@ plotly
 openpyxl
 torch
 torchvision
-scikit-learn
+scikit-learn>=1.0.0
 matplotlib
 seaborn
 torchsummary
