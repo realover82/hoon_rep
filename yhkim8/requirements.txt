@@ -12,4 +12,3 @@ matplotlib
 seaborn
 torchsummary
 reportlab
-scikit-learn
