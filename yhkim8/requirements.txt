@@ -8,3 +8,4 @@ openpyxl
 torch
 torchvision
 scikit-learn
+matplotlib
