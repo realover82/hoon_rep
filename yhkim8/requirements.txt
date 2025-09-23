@@ -10,3 +10,4 @@ torchvision
 scikit-learn
 matplotlib
 seaborn
+torchsummary
