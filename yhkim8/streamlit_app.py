@@ -310,7 +310,7 @@ if st.button("분석 시작"):
                     x = tfm(Image.open(fp).convert("L")).unsqueeze(0).to(device)
                     y = zero_model(x)[0].cpu().numpy()
                 
-                psi_pred = wrap_angle(math.atan2(float(y[0]), float(y[1])))
+                psi_pred = wrap_angle(math.atan2(float(-y[0]), float(y[1])))
                 
                 results.append({
                     "filepath": fp,
