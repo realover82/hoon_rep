@@ -2,32 +2,18 @@ import streamlit as st
 import os
 import re
 import math
-import csv
 import glob
-import random
-import time
-import json
 import numpy as np
 from PIL import Image
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import torchvision.models as tvm
-# sklearn.metrics에서 specificity_score 임포트 제거
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
-import zipfile
-import shutil
-from torchsummary import summary
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as ReportLabImage
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
 import io
-from contextlib import redirect_stdout
 import pandas as pd
 
 # =========================================================
@@ -37,8 +23,6 @@ st.set_page_config(layout="wide")
 st.title("다이얼 게이지 자동 분석 애플리케이션 📊")
 
 # 세션 상태 초기화
-if 'model' not in st.session_state:
-    st.session_state['model'] = None
 if 'analysis_results' not in st.session_state:
     st.session_state['analysis_results'] = None
 if 'model_summary' not in st.session_state:
@@ -47,6 +31,10 @@ if 'finetune_preview' not in st.session_state:
     st.session_state['finetune_preview'] = None
 if 'metrics_calculated' not in st.session_state:
     st.session_state['metrics_calculated'] = False
+if 'model1' not in st.session_state:
+    st.session_state['model1'] = None
+if 'model2' not in st.session_state:
+    st.session_state['model2'] = None
 
 # 임시 파일 업로드 디렉토리
 UPLOAD_DIR = "uploaded_files"
@@ -100,66 +88,6 @@ def parse_mm_prefix(fp):
 TWO_PI = 2.0 * math.pi
 def wrap_angle(x):
     return (x + TWO_PI) % TWO_PI
-
-# PDF 리포트 생성 함수
-def create_pdf_report(filename, results, cm_fig_path, roc_fig_path):
-    doc = SimpleDocTemplate(filename, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
-
-    story.append(Paragraph("<b>다이얼 게이지 분석 보고서</b>", styles['Heading1']))
-    story.append(Spacer(1, 0.2 * inch))
-
-    story.append(Paragraph("<b>1. 성능 지표</b>", styles['Heading2']))
-    story.append(Spacer(1, 0.1 * inch))
-    
-    y_true_binary = [1 if r['true_mm'] > 0.5 else 0 for r in results]
-    y_pred_binary = [1 if r['predicted_psi_rad_model1'] > math.pi else 0 for r in results]
-    accuracy = accuracy_score(y_true_binary, y_pred_binary)
-    precision = precision_score(y_true_binary, y_pred_binary, zero_division=0)
-    recall = recall_score(y_true_binary, y_pred_binary, zero_division=0)
-    f1 = f1_score(y_true_binary, y_pred_binary, zero_division=0)
-    
-    cm = confusion_matrix(y_true_binary, y_pred_binary)
-    if cm.shape == (2, 2):
-        tn, fp, fn, tp = cm.ravel()
-        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-    else:
-        specificity = 0
-
-    story.append(Paragraph(f"Accuracy: {accuracy:.4f}", styles['Normal']))
-    story.append(Paragraph(f"Precision: {precision:.4f}", styles['Normal']))
-    story.append(Paragraph(f"Recall (Sensitivity): {recall:.4f}", styles['Normal']))
-    story.append(Paragraph(f"F1 Score: {f1:.4f}", styles['Normal']))
-    story.append(Paragraph(f"Specificity: {specificity:.4f}", styles['Normal']))
-    story.append(Spacer(1, 0.2 * inch))
-    
-    story.append(Paragraph("<b>2. 혼동 행렬 (Confusion Matrix)</b>", styles['Heading2']))
-    story.append(ReportLabImage(cm_fig_path, width=4*inch, height=4*inch))
-    story.append(Spacer(1, 0.2 * inch))
-    # 혼동 행렬 텍스트 설명 추가
-    cm_text = f"""
-    혼동 행렬은 모델의 예측 결과가 실제 정답과 얼마나 일치하는지 보여줍니다.
-    - True Positive (TP): 실제 양성(Positive)인 것을 양성으로 올바르게 예측한 경우: {tp}
-    - True Negative (TN): 실제 음성(Negative)인 것을 음성으로 올바르게 예측한 경우: {tn}
-    - False Positive (FP): 실제 음성인 것을 양성으로 잘못 예측한 경우 (제1종 오류): {fp}
-    - False Negative (FN): 실제 양성인 것을 음성으로 잘못 예측한 경우 (제2종 오류): {fn}
-    """
-    story.append(Paragraph(cm_text.replace('\n', '<br/>'), styles['Normal']))
-    story.append(Spacer(1, 0.2 * inch))
-
-    story.append(Paragraph("<b>3. ROC 곡선 (ROC Curve)</b>", styles['Heading2']))
-    story.append(ReportLabImage(roc_fig_path, width=4*inch, height=4*inch))
-    # ROC AUC 텍스트 설명 추가
-    roc_text = f"""
-    ROC 곡선은 모델의 분류 성능을 시각화합니다. 곡선이 왼쪽 위 모서리에 가까울수록 성능이 우수합니다.
-    - 곡선 아래 면적(AUC)은 {auc:.2f}입니다. AUC 값은 0과 1 사이이며, 1에 가까울수록 모델의 성능이 좋습니다.
-    - 0.5에 가까운 AUC 값은 모델이 무작위 추측(Random Guess)과 다르지 않음을 의미합니다.
-    """
-    story.append(Paragraph(roc_text.replace('\n', '<br/>'), styles['Normal']))
-
-
-    doc.build(story)
     
 # =========================================================
 # Streamlit UI
@@ -170,41 +98,10 @@ model_choice = st.sidebar.selectbox("모델 선택", ("ResNet-18 (AngleHead)", "
 if model_choice == "YOLOv5 (예정)":
     st.sidebar.warning("YOLOv5는 현재 더미 모델로 구현되어 있으며, 실제 기능은 없습니다.")
 
-load_mode = st.sidebar.radio("모델 가중치 로드", ("파인튜닝", "무작위 초기화"))
-
-# 파인튜닝 레이어 설정 목록 버튼
-st.sidebar.header("파인튜닝 설정")
-if st.session_state['model'] is not None:
-    layer_names = [name for name, param in st.session_state['model'].named_parameters()]
-    finetune_layers_list = st.sidebar.multiselect(
-        "파인튜닝할 레이어 선택",
-        options=layer_names,
-        default=['backbone.fc.weight', 'backbone.fc.bias']
-    )
-else:
-    finetune_layers_list = []
-    st.sidebar.warning("모델을 로드하면 레이어 목록이 표시됩니다.")
-
-# 파인튜닝 설정 적용 버튼 (재학습 기능은 현재 없음)
-if st.button("파인튜닝 설정 적용"):
-    if st.session_state['model'] is None:
-        st.warning("먼저 모델을 로드하거나 초기화해주세요.")
-    else:
-        try:
-            for name, param in st.session_state['model'].named_parameters():
-                if name in finetune_layers_list:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-            st.success("파인튜닝 레이어 설정이 적용되었습니다.")
-            st.info("이 설정은 '분석 시작' 버튼에 반영됩니다.")
-        except Exception as e:
-            st.error(f"파인튜닝 설정 적용 중 오류 발생: {e}")
-
 st.sidebar.text("")
 
 # =========================================================
-# 파일 업로드 섹션 (수정됨)
+# 파일 업로드 섹션
 # =========================================================
 st.header("📂 데이터 업로드")
 st.markdown("성능 테스트에 사용할 다이얼 게이지 이미지를 업로드하세요. 파일명은 `0-sample.png` 또는 `00-sample.png` 형식으로 `mm` 값이 포함되어야 합니다.")
@@ -226,44 +123,9 @@ st.subheader("모델 2 업로드")
 uploaded_model2_pth = st.file_uploader("Model 2 .pth 파일 업로드", type=["pth"], key="model2_uploader")
     
 # =========================================================
-# 기능 버튼 (수정됨)
+# 기능 버튼
 # =========================================================
 st.header("🚀 성능 테스트 실행")
-
-# 모델 구조 보기 버튼
-if st.button("모델 구조 보기"):
-    st.info("모델 구조를 분석 중입니다...")
-    try:
-        if st.session_state['model'] is None:
-            st.warning("모델이 로드되지 않았습니다.")
-        else:
-            buffer = io.StringIO()
-            with redirect_stdout(buffer):
-                summary(st.session_state['model'], (3, 224, 224), device=str(device))
-            st.session_state['model_summary'] = buffer.getvalue()
-            st.success("모델 구조 분석 완료!")
-    except Exception as e:
-        st.error(f"모델 구조 분석 중 오류 발생: {e}")
-
-if st.session_state['model_summary']:
-    st.subheader("모델 구조 상세")
-    st.code(st.session_state['model_summary'])
-
-# 파인튜닝 레이어 설정 미리보기 버튼
-if st.button("파인튜닝 레이어 미리보기"):
-    st.info("파인튜닝 레이어 설정을 미리보기 합니다...")
-    if st.session_state['model']:
-        preview_text = "파인튜닝에 사용될 레이어:\n"
-        for name, param in st.session_state['model'].named_parameters():
-            preview_text += f"- {name} ({'학습 가능' if param.requires_grad else '고정'})\n"
-        st.session_state['finetune_preview'] = preview_text
-        st.success("미리보기 완료!")
-    else:
-        st.warning("먼저 모델을 로드하거나 초기화해주세요.")
-
-if st.session_state['finetune_preview']:
-    st.subheader("파인튜닝 설정 미리보기")
-    st.text(st.session_state['finetune_preview'])
 
 if st.button("두 모델 분석 및 비교 시작"):
     image_extensions = ['*.png', '*.jpg', '*.jpeg']
@@ -312,12 +174,10 @@ if st.button("두 모델 분석 및 비교 시작"):
             
             # 모델 1 예측
             y1 = model1(x)[0].cpu().numpy()
-            # y좌표가 이미지 좌표계와 반대이므로 -를 붙여줌
             psi_pred1 = wrap_angle(math.atan2(float(-y1[0]), float(y1[1])))
             
             # 모델 2 예측
             y2 = model2(x)[0].cpu().numpy()
-            # y좌표가 이미지 좌표계와 반대이므로 -를 붙여줌
             psi_pred2 = wrap_angle(math.atan2(float(-y2[0]), float(y2[1])))
 
         # 텍스트로 결과 출력
@@ -336,7 +196,6 @@ if st.button("두 모델 분석 및 비교 시작"):
         
     st.session_state['analysis_results'] = results
     st.success("분석 완료!")
-
 
 if st.session_state['analysis_results']:
     st.header(f"📋 분석 결과")
@@ -417,13 +276,6 @@ if st.session_state['analysis_results']:
         showlegend=True
     )
     st.plotly_chart(fig_roc)
-
-st.markdown("---")
-st.subheader("변형된 모델 저장")
-# 이 부분은 단일 모델을 다루므로 원본 코드 유지
-if st.button("변형된 모델 저장"):
-    st.warning("이 기능은 단일 모델에만 적용됩니다. Model 1 또는 Model 2 중 하나를 수동으로 저장해야 합니다.")
-
 
 st.markdown("---")
 st.subheader("분석 결과 다운로드")
