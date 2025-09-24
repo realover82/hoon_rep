@@ -141,25 +141,25 @@ if st.button("두 모델 분석 및 비교 시작"):
         st.warning("분석을 시작하려면 두 모델의 .pth 파일을 모두 업로드해야 합니다.")
         st.stop()
 
-    # 두 모델 초기화 및 가중치 로드
     st.info("두 모델을 로딩 중...")
     try:
         model1 = AngleHead(pretrained=False).to(device)
         model2 = AngleHead(pretrained=False).to(device)
         
-        # 파일 업로드 데이터를 메모리에서 바로 사용
-        model1.load_state_dict(torch.load(io.BytesIO(uploaded_model1_pth.read()), map_location=device))
-        model2.load_state_dict(torch.load(io.BytesIO(uploaded_model2_pth.read()), map_location=device))
-        
+        state_dict_m1 = torch.load(io.BytesIO(uploaded_model1_pth.read()), map_location=device)
+        model1.load_state_dict(state_dict_m1, strict=False)
         model1.eval()
+
+        state_dict_m2 = torch.load(io.BytesIO(uploaded_model2_pth.read()), map_location=device)
+        model2.load_state_dict(state_dict_m2, strict=False)
         model2.eval()
+        
         st.success("두 모델 로딩 완료!")
 
     except Exception as e:
         st.error(f"모델 로딩 중 오류 발생: {e}")
         st.stop()
     
-    # 텍스트 출력 헤더
     st.header("📊 개별 파일 분석 결과")
     results = []
 
@@ -172,26 +172,17 @@ if st.button("두 모델 분석 및 비교 시작"):
         with torch.no_grad():
             x = tfm(Image.open(fp).convert("L")).unsqueeze(0).to(device)
             
-            # 모델 1 예측
             y1 = model1(x)[0].cpu().numpy()
             psi_pred1 = wrap_angle(math.atan2(float(-y1[0]), float(y1[1])))
             
-            # 모델 2 예측
             y2 = model2(x)[0].cpu().numpy()
             psi_pred2 = wrap_angle(math.atan2(float(-y2[0]), float(y2[1])))
 
-        # 텍스트로 결과 출력
-        st.text(f"--- 파일: {os.path.basename(fp)} ---")
-        st.text(f"실제 값: {mm_from_name * 100:.2f} mm")
-        st.text(f"모델 1 예측 값: {(psi_pred1 / TWO_PI) * 100:.2f} mm")
-        st.text(f"모델 2 예측 값: {(psi_pred2 / TWO_PI) * 100:.2f} mm")
-        st.text("-----------------------------------")
-        
         results.append({
             "filepath": os.path.basename(fp),
             "true_mm": mm_from_name,
-            "predicted_psi_rad_model1": psi_pred1,
-            "predicted_psi_rad_model2": psi_pred2,
+            "predicted_mm_model1": (psi_pred1 / TWO_PI) * 100,
+            "predicted_mm_model2": (psi_pred2 / TWO_PI) * 100,
         })
         
     st.session_state['analysis_results'] = results
@@ -200,11 +191,20 @@ if st.button("두 모델 분석 및 비교 시작"):
 if st.session_state['analysis_results']:
     st.header(f"📋 분석 결과")
     results = st.session_state['analysis_results']
+    results_df = pd.DataFrame(results)
+
+    # DataFrame 표시
+    st.subheader("개별 파일 예측 결과")
+    st.dataframe(results_df.style.format({
+        'true_mm': '{:.2f}',
+        'predicted_mm_model1': '{:.2f}',
+        'predicted_mm_model2': '{:.2f}'
+    }))
 
     # 모델 1 성능 지표 계산 및 시각화
     st.subheader("모델 1 성능 지표")
     y_true_binary = [1 if r['true_mm'] > 0.5 else 0 for r in results]
-    y_pred_binary_m1 = [1 if r['predicted_psi_rad_model1'] > math.pi else 0 for r in results]
+    y_pred_binary_m1 = [1 if r['predicted_mm_model1'] > 50 else 0 for r in results]
     
     cm_m1 = confusion_matrix(y_true_binary, y_pred_binary_m1)
     if cm_m1.shape == (2, 2):
@@ -224,14 +224,17 @@ if st.session_state['analysis_results']:
     ax_cm_m1.set_ylabel('True')
     st.pyplot(fig_cm_m1)
 
-    st.write("**Accuracy:**", accuracy_score(y_true_binary, y_pred_binary_m1))
-    st.write("**Precision:**", precision_score(y_true_binary, y_pred_binary_m1, zero_division=0))
-    st.write("**Recall:**", recall_score(y_true_binary, y_pred_binary_m1, zero_division=0))
-    st.write("**F1 Score:**", f1_score(y_true_binary, y_pred_binary_m1, zero_division=0))
+    metrics_m1 = {
+        "Accuracy": [accuracy_score(y_true_binary, y_pred_binary_m1)],
+        "Precision": [precision_score(y_true_binary, y_pred_binary_m1, zero_division=0)],
+        "Recall": [recall_score(y_true_binary, y_pred_binary_m1, zero_division=0)],
+        "F1 Score": [f1_score(y_true_binary, y_pred_binary_m1, zero_division=0)],
+    }
+    st.dataframe(pd.DataFrame(metrics_m1).T.style.format({0: '{:.4f}'}).rename(columns={0: 'Model 1'}))
 
     # 모델 2 성능 지표 계산 및 시각화
     st.subheader("모델 2 성능 지표")
-    y_pred_binary_m2 = [1 if r['predicted_psi_rad_model2'] > math.pi else 0 for r in results]
+    y_pred_binary_m2 = [1 if r['predicted_mm_model2'] > 50 else 0 for r in results]
     
     cm_m2 = confusion_matrix(y_true_binary, y_pred_binary_m2)
     if cm_m2.shape == (2, 2):
@@ -251,17 +254,20 @@ if st.session_state['analysis_results']:
     ax_cm_m2.set_ylabel('True')
     st.pyplot(fig_cm_m2)
 
-    st.write("**Accuracy:**", accuracy_score(y_true_binary, y_pred_binary_m2))
-    st.write("**Precision:**", precision_score(y_true_binary, y_pred_binary_m2, zero_division=0))
-    st.write("**Recall:**", recall_score(y_true_binary, y_pred_binary_m2, zero_division=0))
-    st.write("**F1 Score:**", f1_score(y_true_binary, y_pred_binary_m2, zero_division=0))
+    metrics_m2 = {
+        "Accuracy": [accuracy_score(y_true_binary, y_pred_binary_m2)],
+        "Precision": [precision_score(y_true_binary, y_pred_binary_m2, zero_division=0)],
+        "Recall": [recall_score(y_true_binary, y_pred_binary_m2, zero_division=0)],
+        "F1 Score": [f1_score(y_true_binary, y_pred_binary_m2, zero_division=0)],
+    }
+    st.dataframe(pd.DataFrame(metrics_m2).T.style.format({0: '{:.4f}'}).rename(columns={0: 'Model 2'}))
     
     st.subheader("ROC 곡선 및 AUC")
-    y_scores_m1 = [r['predicted_psi_rad_model1'] / TWO_PI for r in results]
+    y_scores_m1 = [r['predicted_mm_model1'] / 100 for r in results]
     fpr_m1, tpr_m1, _ = roc_curve(y_true_binary, y_scores_m1)
     roc_auc_m1 = auc(fpr_m1, tpr_m1)
 
-    y_scores_m2 = [r['predicted_psi_rad_model2'] / TWO_PI for r in results]
+    y_scores_m2 = [r['predicted_mm_model2'] / 100 for r in results]
     fpr_m2, tpr_m2, _ = roc_curve(y_true_binary, y_scores_m2)
     roc_auc_m2 = auc(fpr_m2, tpr_m2)
     
