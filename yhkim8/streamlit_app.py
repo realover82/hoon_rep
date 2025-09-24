@@ -230,7 +230,9 @@ if st.session_state['analysis_results']:
         "Recall": [recall_score(y_true_binary, y_pred_binary_m1, zero_division=0)],
         "F1 Score": [f1_score(y_true_binary, y_pred_binary_m1, zero_division=0)],
     }
-    st.dataframe(pd.DataFrame(metrics_m1).T.style.format({0: '{:.4f}'}).rename(columns={0: 'Model 1'}))
+    metrics_df_m1 = pd.DataFrame(metrics_m1).T
+    metrics_df_m1 = metrics_df_m1.rename(columns={0: 'Model 1'})
+    st.dataframe(metrics_df_m1.style.format({0: '{:.4f}'}))
 
     # 모델 2 성능 지표 계산 및 시각화
     st.subheader("모델 2 성능 지표")
@@ -260,7 +262,9 @@ if st.session_state['analysis_results']:
         "Recall": [recall_score(y_true_binary, y_pred_binary_m2, zero_division=0)],
         "F1 Score": [f1_score(y_true_binary, y_pred_binary_m2, zero_division=0)],
     }
-    st.dataframe(pd.DataFrame(metrics_m2).T.style.format({0: '{:.4f}'}).rename(columns={0: 'Model 2'}))
+    metrics_df_m2 = pd.DataFrame(metrics_m2).T
+    metrics_df_m2 = metrics_df_m2.rename(columns={0: 'Model 2'})
+    st.dataframe(metrics_df_m2.style.format({0: '{:.4f}'}))
     
     st.subheader("ROC 곡선 및 AUC")
     y_scores_m1 = [r['predicted_mm_model1'] / 100 for r in results]
